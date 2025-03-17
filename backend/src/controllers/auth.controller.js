@@ -154,7 +154,15 @@ exports.getProfile = async (req, res) => {
     
     res.status(200).json({
       success: true,
-      user
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        expertiseArea: user.expertiseArea,
+        profilePicture: user.profilePicture
+      }
     });
   } catch (error) {
     res.status(500).json({

@@ -24,6 +24,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const adminRoutes = require('./routes/admin.routes');
 const commentRoutes = require('./routes/comment.routes');
 const fileRoutes = require('./routes/file.routes');
+const licenseRoutes = require('../routes/license.routes');
 
 // Initialize express app
 const app = express();
@@ -77,6 +78,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/export', require('./routes/export.routes'));
+app.use('/api/licenses', licenseRoutes);
 
 // Catch 404 and forward to error handler
 app.use(notFound);
