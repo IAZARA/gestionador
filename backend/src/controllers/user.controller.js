@@ -7,11 +7,8 @@ exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password');
     
-    res.status(200).json({
-      success: true,
-      count: users.length,
-      users
-    });
+    // Devolver directamente el array de usuarios
+    res.status(200).json(users);
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -49,45 +46,98 @@ exports.getUserById = async (req, res) => {
 // Create new user (admin only)
 exports.createUser = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, role, expertiseArea } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      password,
+      role, 
+      expertiseArea, 
+      idNumber, 
+      birthDate, 
+      address, 
+      phone, 
+      alternativePhone, 
+      dependencyName, 
+      dependencyPhone, 
+      dependencyAddress, 
+      bloodType, 
+      drivingLicense 
+    } = req.body;
     
     // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
         success: false,
-        message: 'User already exists with this email'
+        message: 'El email ya está registrado'
       });
     }
     
     // Create new user
-    user = new User({
-      firstName,
-      lastName,
-      email,
-      password,
-      role,
-      expertiseArea
+    const user = new User({
+      firstName, 
+      lastName, 
+      email, 
+      password: password || Math.random().toString(36).slice(-8), // Generar contraseña aleatoria si no se proporciona
+      role: role || 'user', 
+      expertiseArea: expertiseArea || 'administrative', 
+      idNumber, 
+      dateOfBirth: birthDate, 
+      address: {
+        street: address
+      }, 
+      primaryPhone: phone, 
+      alternatePhone: alternativePhone, 
+      department: dependencyName, 
+      workPhone: dependencyPhone, 
+      workAddress: {
+        street: dependencyAddress
+      }, 
+      bloodType, 
+      drivingLicense: {
+        number: drivingLicense
+      }
     });
     
     await user.save();
     
+    // Remove password from response
+    const userResponse = user.toObject();
+    delete userResponse.password;
+    
     res.status(201).json({
       success: true,
-      message: 'User created successfully',
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        expertiseArea: user.expertiseArea
-      }
+      message: 'Usuario creado correctamente',
+      user: userResponse
     });
   } catch (error) {
+    console.error('Error creating user:', error);
+    
+    // Manejar errores de validación de MongoDB
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Error de validación',
+        errors: Object.keys(error.errors).reduce((acc, key) => {
+          acc[key] = error.errors[key].message;
+          return acc;
+        }, {})
+      });
+    }
+    
+    // Manejar errores de duplicación (email único)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'El email o DNI ya está en uso',
+        field: Object.keys(error.keyPattern)[0]
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error creating user',
+      message: 'Error del servidor al crear el usuario',
       error: error.message
     });
   }
@@ -96,7 +146,25 @@ exports.createUser = async (req, res) => {
 // Update user (admin only)
 exports.updateUser = async (req, res) => {
   try {
-    const { firstName, lastName, email, role, expertiseArea, isActive } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      role, 
+      expertiseArea, 
+      idNumber,
+      taxId,
+      dateOfBirth,
+      address,
+      primaryPhone,
+      alternatePhone,
+      department,
+      position,
+      workAddress,
+      workPhone,
+      drivingLicense,
+      bloodType
+    } = req.body;
     
     // Build update object
     const updateFields = {};
@@ -105,7 +173,22 @@ exports.updateUser = async (req, res) => {
     if (email) updateFields.email = email;
     if (role) updateFields.role = role;
     if (expertiseArea) updateFields.expertiseArea = expertiseArea;
-    if (isActive !== undefined) updateFields.isActive = isActive;
+    if (idNumber) updateFields.idNumber = idNumber;
+    if (taxId) updateFields.taxId = taxId;
+    if (dateOfBirth) updateFields.dateOfBirth = dateOfBirth;
+    
+    // Manejar objetos anidados
+    if (address) updateFields.address = address;
+    if (primaryPhone) updateFields.primaryPhone = primaryPhone;
+    if (alternatePhone) updateFields.alternatePhone = alternatePhone;
+    if (department) updateFields.department = department;
+    if (position) updateFields.position = position;
+    if (workAddress) updateFields.workAddress = workAddress;
+    if (workPhone) updateFields.workPhone = workPhone;
+    if (drivingLicense) updateFields.drivingLicense = drivingLicense;
+    if (bloodType) updateFields.bloodType = bloodType;
+    
+    console.log('Actualizando usuario con campos:', updateFields);
     
     // Find and update user
     const user = await User.findByIdAndUpdate(
@@ -117,19 +200,42 @@ exports.updateUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'Usuario no encontrado'
       });
     }
     
     res.status(200).json({
       success: true,
-      message: 'User updated successfully',
+      message: 'Usuario actualizado correctamente',
       user
     });
   } catch (error) {
+    console.error('Error updating user:', error);
+    
+    // Manejar errores de validación de MongoDB
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Error de validación',
+        errors: Object.keys(error.errors).reduce((acc, key) => {
+          acc[key] = error.errors[key].message;
+          return acc;
+        }, {})
+      });
+    }
+    
+    // Manejar errores de duplicación (email único)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'El email o DNI ya está en uso',
+        field: Object.keys(error.keyPattern)[0]
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error updating user',
+      message: 'Error del servidor al actualizar el usuario',
       error: error.message
     });
   }

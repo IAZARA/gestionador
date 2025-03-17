@@ -1,4 +1,5 @@
 const License = require('../../models/License');
+const User = require('../models/User');
 const { logger } = require('../utils/logger');
 
 /**
@@ -147,5 +148,59 @@ exports.deleteLicense = async (req, res) => {
     }
     
     res.status(500).json({ message: 'Error al eliminar la licencia' });
+  }
+};
+
+/**
+ * Get licenses as calendar events
+ * @route GET /api/licenses/calendar
+ * @access Private
+ */
+exports.getLicensesAsCalendarEvents = async (req, res) => {
+  try {
+    // Obtener todas las licencias
+    const licenses = await License.find();
+    
+    // Transformar licencias en eventos para el calendario
+    const events = [];
+    
+    for (const license of licenses) {
+      // Obtener información del usuario
+      let userName = 'Usuario desconocido';
+      
+      if (license.userId) {
+        try {
+          const user = await User.findById(license.userId);
+          if (user) {
+            userName = `${user.firstName} ${user.lastName}`;
+          }
+        } catch (userErr) {
+          logger.error(`Error al obtener usuario para licencia ${license._id}:`, userErr);
+        }
+      }
+      
+      // Para cada fracción de licencia, crear un evento
+      if (license.fractions && license.fractions.length > 0) {
+        license.fractions.forEach(fraction => {
+          events.push({
+            id: `license-${license._id}-${fraction._id}`,
+            title: `Licencia: ${userName}`,
+            start: fraction.startDate,
+            end: fraction.endDate,
+            allDay: true,
+            description: `Licencia en área: ${license.area}. Días: ${fraction.days}`,
+            type: 'license',
+            color: '#ff9800', // Color naranja para licencias
+            licenseId: license._id,
+            userId: license.userId
+          });
+        });
+      }
+    }
+    
+    res.json(events);
+  } catch (err) {
+    logger.error('Error getting licenses as calendar events:', err);
+    res.status(500).json({ message: 'Error al obtener licencias como eventos del calendario' });
   }
 };

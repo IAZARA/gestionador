@@ -24,7 +24,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const adminRoutes = require('./routes/admin.routes');
 const commentRoutes = require('./routes/comment.routes');
 const fileRoutes = require('./routes/file.routes');
-const licenseRoutes = require('../routes/license.routes');
+const licenseRoutes = require('./routes/license.routes');
 
 // Initialize express app
 const app = express();
