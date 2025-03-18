@@ -2,6 +2,7 @@ const Project = require('../models/Project');
 const Task = require('../models/Task');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const Document = require('../models/Document');
 
 // Create a new project
 exports.createProject = async (req, res) => {
@@ -671,4 +672,174 @@ const calculateExpectedProgress = (startDate, endDate) => {
   const elapsed = today - start;
   
   return Math.round((elapsed / totalDuration) * 100);
+};
+
+// Get project documents
+exports.getProjectDocuments = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    
+    // Check if project exists
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+    
+    // Get documents for this project
+    const documents = await Document.find({ project: projectId })
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      count: documents.length,
+      documents
+    });
+  } catch (error) {
+    console.error('Error getting project documents:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error retrieving project documents',
+      error: error.message
+    });
+  }
+};
+
+// Upload document to project
+exports.uploadDocument = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { name, description, fileUrl, fileType, fileSize } = req.body;
+    
+    // Check if project exists
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+    
+    // Create new document
+    const document = new Document({
+      name,
+      description,
+      fileUrl,
+      fileType,
+      fileSize,
+      project: projectId,
+      uploadedBy: req.user.id
+    });
+    
+    await document.save();
+    
+    // Add activity to project
+    project.activity.push({
+      action: 'document_uploaded',
+      user: req.user.id,
+      timestamp: Date.now(),
+      details: { documentId: document._id, documentName: name }
+    });
+    
+    await project.save();
+    
+    res.status(201).json({
+      success: true,
+      message: 'Document uploaded successfully',
+      document
+    });
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error uploading document',
+      error: error.message
+    });
+  }
+};
+
+// Get document by ID
+exports.getDocumentById = async (req, res) => {
+  try {
+    const { projectId, documentId } = req.params;
+    
+    // Check if project exists
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+    
+    // Get document
+    const document = await Document.findOne({ _id: documentId, project: projectId });
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      document
+    });
+  } catch (error) {
+    console.error('Error getting document:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error retrieving document',
+      error: error.message
+    });
+  }
+};
+
+// Delete document
+exports.deleteDocument = async (req, res) => {
+  try {
+    const { projectId, documentId } = req.params;
+    
+    // Check if project exists
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+    
+    // Find and delete document
+    const document = await Document.findOneAndDelete({ _id: documentId, project: projectId });
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+    
+    // Add activity to project
+    project.activity.push({
+      action: 'document_deleted',
+      user: req.user.id,
+      timestamp: Date.now(),
+      details: { documentName: document.name }
+    });
+    
+    await project.save();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error deleting document',
+      error: error.message
+    });
+  }
 };
