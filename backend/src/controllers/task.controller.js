@@ -577,22 +577,32 @@ exports.getTasksByUser = async (req, res) => {
 // Get user's tasks
 exports.getMyTasks = async (req, res) => {
   try {
+    console.log('Usuario autenticado:', req.user);
+    console.log('ID del usuario (_id):', req.user._id);
+    console.log('ID del usuario (id):', req.user.id);
+    
+    // Usar el ID del usuario en ambos formatos para cubrir todas las posibilidades
     const tasks = await Task.find({
       $or: [
-        { assignees: req.user._id },
-        { createdBy: req.user._id }
+        { assignedTo: req.user._id },
+        { assignedTo: req.user.id },
+        { createdBy: req.user._id },
+        { createdBy: req.user.id }
       ]
     })
     .populate('project', 'name')
-    .populate('assignees', 'firstName lastName email')
+    .populate('assignedTo', 'firstName lastName email profilePicture')
     .populate('createdBy', 'firstName lastName email')
     .sort({ createdAt: -1 });
 
+    console.log(`Se encontraron ${tasks.length} tareas para el usuario`);
+    
     res.status(200).json({
       success: true,
       tasks
     });
   } catch (error) {
+    console.error('Error en getMyTasks:', error);
     res.status(500).json({
       success: false,
       message: 'Error al obtener las tareas del usuario',
