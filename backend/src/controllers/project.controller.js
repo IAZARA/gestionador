@@ -3,6 +3,10 @@ const Task = require('../models/Task');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Document = require('../models/Document');
+const Comment = require('../models/Comment');
+const File = require('../models/File');
+const CalendarEvent = require('../models/CalendarEvent');
+const WikiPage = require('../models/WikiPage');
 
 // Create a new project
 exports.createProject = async (req, res) => {
@@ -158,7 +162,8 @@ exports.updateProject = async (req, res) => {
 // Delete project
 exports.deleteProject = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.projectId);
+    const projectId = req.params.projectId;
+    const project = await Project.findById(projectId);
     
     if (!project) {
       return res.status(404).json({
@@ -167,20 +172,45 @@ exports.deleteProject = async (req, res) => {
       });
     }
     
-    // Delete all tasks associated with this project
-    await Task.deleteMany({ project: req.params.projectId });
+    // Eliminar todas las referencias al proyecto en otros modelos
+    const deleteOperations = [
+      // Eliminar tareas asociadas al proyecto
+      Task.deleteMany({ project: projectId }),
+      
+      // Eliminar documentos asociados al proyecto
+      Document.deleteMany({ project: projectId }),
+      
+      // Eliminar notificaciones asociadas al proyecto
+      Notification.deleteMany({ project: projectId }),
+      
+      // Eliminar comentarios asociados al proyecto
+      Comment.deleteMany({ project: projectId }),
+      
+      // Eliminar eventos de calendario asociados al proyecto
+      CalendarEvent.deleteMany({ project: projectId }),
+      
+      // Eliminar archivos asociados al proyecto
+      File.deleteMany({ project: projectId }),
+      
+      // Eliminar páginas wiki asociadas al proyecto
+      WikiPage.deleteMany({ project: projectId })
+    ];
     
-    // Delete the project itself
-    await Project.findByIdAndDelete(req.params.projectId);
+    // Ejecutar todas las operaciones de eliminación en paralelo
+    await Promise.all(deleteOperations);
+    
+    // Finalmente, eliminar el proyecto
+    await Project.findByIdAndDelete(projectId);
     
     res.status(200).json({
       success: true,
-      message: 'Project and all associated tasks deleted successfully'
+      message: 'Proyecto y todos sus datos asociados eliminados correctamente'
     });
   } catch (error) {
+    console.error('Error al eliminar proyecto:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error deleting project',
+      message: 'Error del servidor al eliminar el proyecto',
       error: error.message
     });
   }
