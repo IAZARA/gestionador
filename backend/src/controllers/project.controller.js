@@ -7,6 +7,7 @@ const Comment = require('../models/Comment');
 const File = require('../models/File');
 const CalendarEvent = require('../models/CalendarEvent');
 const WikiPage = require('../models/WikiPage');
+const AuditLog = require('../models/AuditLog');
 
 // Create a new project
 exports.createProject = async (req, res) => {
@@ -750,20 +751,137 @@ exports.generateProjectReport = async (req, res) => {
 // Get project activity
 exports.getProjectActivity = async (req, res) => {
   try {
-    // This would typically fetch from an activity log or audit trail
-    // For now, we'll return a placeholder response
+    const { projectId } = req.params;
+    const { limit = 20, page = 1 } = req.query;
+    
+    // Buscar actividades relacionadas con el proyecto y sus entidades relacionadas (tareas, documentos, etc.)
+    const activities = await AuditLog.find({
+      $or: [
+        // Actividades directamente relacionadas con el proyecto
+        { entityType: 'project', entityId: projectId },
+        
+        // Actividades de tareas del proyecto
+        { 
+          entityType: 'task',
+          'details.projectId': projectId
+        },
+        
+        // Actividades de documentos del proyecto
+        { 
+          entityType: 'document',
+          'details.projectId': projectId
+        },
+        
+        // Actividades de páginas wiki del proyecto
+        { 
+          entityType: 'wiki_page',
+          'details.projectId': projectId
+        },
+        
+        // Actividades de comentarios en el proyecto
+        { 
+          entityType: 'comment',
+          'details.projectId': projectId
+        }
+      ]
+    })
+    .populate('userId', 'firstName lastName email profilePicture')
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit))
+    .skip((parseInt(page) - 1) * parseInt(limit));
+    
+    // Formatear los resultados para el frontend
+    const formattedActivities = activities.map(activity => ({
+      id: activity._id,
+      tipo: activity.action,
+      descripcion: formatActivityDescription(activity),
+      usuario: {
+        id: activity.userId._id,
+        nombre: `${activity.userId.firstName} ${activity.userId.lastName}`,
+        email: activity.userId.email,
+        avatar: activity.userId.profilePicture
+      },
+      fecha: activity.createdAt,
+      detalles: activity.details,
+      entidad: {
+        tipo: activity.entityType,
+        id: activity.entityId
+      }
+    }));
+    
     res.status(200).json({
       success: true,
-      message: 'Project activity feature is under development',
-      activity: []
+      activities: formattedActivities,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: await AuditLog.countDocuments({
+        $or: [
+          { entityType: 'project', entityId: projectId },
+          { entityType: 'task', 'details.projectId': projectId },
+          { entityType: 'document', 'details.projectId': projectId },
+          { entityType: 'wiki_page', 'details.projectId': projectId },
+          { entityType: 'comment', 'details.projectId': projectId }
+        ]
+      })
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Server error retrieving project activity',
+      message: 'Error al obtener actividad del proyecto',
       error: error.message
     });
   }
+};
+
+// Función para generar descripciones legibles de las actividades
+const formatActivityDescription = (activity) => {
+  const actionMap = {
+    'create': 'creó',
+    'update': 'actualizó',
+    'delete': 'eliminó',
+    'read': 'visualizó',
+    'status_change': 'cambió el estado de',
+    'login': 'inició sesión',
+    'logout': 'cerró sesión',
+    'password_reset': 'restableció su contraseña',
+    'permission_change': 'cambió permisos de',
+    'export_data': 'exportó datos de',
+    'import_data': 'importó datos a',
+    'batch_operation': 'realizó una operación masiva en'
+  };
+  
+  const entityMap = {
+    'project': 'el proyecto',
+    'task': 'una tarea',
+    'document': 'un documento',
+    'comment': 'un comentario',
+    'wiki_page': 'una página wiki',
+    'user': 'un usuario',
+    'file': 'un archivo',
+    'folder': 'una carpeta',
+    'leave': 'una solicitud de ausencia',
+    'notification': 'una notificación',
+    'calendar_event': 'un evento de calendario',
+    'system': 'el sistema'
+  };
+  
+  const action = actionMap[activity.action] || activity.action;
+  const entity = entityMap[activity.entityType] || activity.entityType;
+  
+  // Si hay nombre de la entidad, incluirlo
+  const entityName = activity.details && activity.details.name ? ` "${activity.details.name}"` : '';
+  
+  // Si hay detalles específicos, incluirlos en la descripción
+  if (activity.action === 'status_change' && activity.details && activity.details.newStatus) {
+    return `${action} ${entity}${entityName} a "${activity.details.newStatus}"`;
+  }
+  
+  if (activity.action === 'update' && activity.changes && activity.changes.length > 0) {
+    const fields = activity.changes.map(change => change.field).join(', ');
+    return `${action} ${fields} en ${entity}${entityName}`;
+  }
+  
+  return `${action} ${entity}${entityName}`;
 };
 
 // Helper function to calculate expected progress

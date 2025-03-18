@@ -298,22 +298,46 @@ exports.updateTask = async (req, res) => {
 // Delete task
 exports.deleteTask = async (req, res) => {
   try {
+    console.log('Solicitud de eliminación de tarea recibida:', {
+      taskId: req.params.taskId,
+      projectId: req.params.projectId || 'No proporcionado',
+      ruta: req.originalUrl
+    });
+    
     const task = await Task.findById(req.params.taskId);
     
     if (!task) {
+      console.log(`Tarea con ID ${req.params.taskId} no encontrada`);
       return res.status(404).json({
         success: false,
         message: 'Task not found'
       });
     }
     
+    // Si se proporciona un projectId en la ruta, verificar que la tarea pertenezca al proyecto
+    if (req.params.projectId) {
+      console.log(`Verificando si la tarea ${req.params.taskId} pertenece al proyecto ${req.params.projectId}`);
+      
+      // Si la tarea no pertenece al proyecto especificado
+      if (task.project && task.project.toString() !== req.params.projectId) {
+        console.log(`La tarea pertenece al proyecto ${task.project}, no al proyecto ${req.params.projectId}`);
+        return res.status(400).json({
+          success: false,
+          message: 'Task does not belong to the specified project'
+        });
+      }
+    }
+    
+    console.log(`Eliminando tarea con ID ${req.params.taskId}`);
     await Task.findByIdAndDelete(req.params.taskId);
     
+    console.log('Tarea eliminada exitosamente');
     res.status(200).json({
       success: true,
       message: 'Task deleted successfully'
     });
   } catch (error) {
+    console.error('Error al eliminar tarea:', error);
     res.status(500).json({
       success: false,
       message: 'Server error deleting task',
@@ -623,6 +647,17 @@ exports.updateTaskStatus = async (req, res) => {
       });
     }
     
+    // Lista de estados válidos incluyendo "Deleted"
+    const validStatuses = ['To_Do', 'In_Progress', 'In_Review', 'Completed', 'Deleted'];
+    
+    // Verificar que el estado es válido
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Estado no válido. Estados permitidos: ${validStatuses.join(', ')}`
+      });
+    }
+    
     // Get current task to check for status change
     const currentTask = await Task.findById(req.params.taskId);
     
@@ -636,11 +671,15 @@ exports.updateTaskStatus = async (req, res) => {
     // Build update object
     const updateFields = { status };
     
-    // If status is changed to Completed, set completedAt
-    if (status === 'Completed' && currentTask.status !== 'Completed') {
+    // Si status es "Deleted", no actualizar completedAt
+    if (status === 'Deleted') {
+      // No hacer nada especial, solo actualizar el status
+    }
+    // Si status es Completed y no estaba completado antes
+    else if (status === 'Completed' && currentTask.status !== 'Completed') {
       updateFields.completedAt = Date.now();
     } else if (status !== 'Completed') {
-      // If changing from Completed to another status, clear completedAt
+      // Si cambió de Completed a otro estado, limpiar completedAt
       updateFields.completedAt = null;
     }
     
@@ -660,7 +699,7 @@ exports.updateTaskStatus = async (req, res) => {
       });
     }
 
-    // Actualizar el progreso del proyecto
+    // Actualizar el progreso del proyecto - solo considerar tareas no eliminadas
     await updateProjectProgress(task.project);
     
     res.status(200).json({
@@ -681,7 +720,10 @@ exports.updateTaskStatus = async (req, res) => {
 const updateProjectProgress = async (projectId) => {
   try {
     // Obtener todas las tareas del proyecto
-    const tasks = await Task.find({ project: projectId });
+    const allTasks = await Task.find({ project: projectId });
+    
+    // Filtrar las tareas eliminadas
+    const tasks = allTasks.filter(task => task.status !== 'Deleted');
     
     // Calcular el progreso en base a las tareas
     const totalTasks = tasks.length;
