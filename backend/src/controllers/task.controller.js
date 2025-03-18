@@ -6,59 +6,57 @@ const Notification = require('../models/Notification');
 // Create a new task
 exports.createTask = async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      project, 
-      assignedTo, 
-      status, 
-      priority, 
-      startDate, 
-      dueDate, 
-      tags 
+    const {
+      title,
+      description,
+      projectId,
+      status,
+      priority,
+      startDate,
+      dueDate,
+      assignedTo,
+      tags
     } = req.body;
     
-    // Check if project exists
-    const projectExists = await Project.findById(project);
-    if (!projectExists) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
-    }
-    
-    // Create new task
+    // Create task
     const task = new Task({
       title,
       description,
-      project,
-      assignedTo: assignedTo || [],
+      project: projectId,
       status: status || 'To_Do',
       priority: priority || 'Medium',
       startDate,
       dueDate,
+      assignedTo: assignedTo || [],
       tags: tags || [],
       createdBy: req.user.id
     });
     
     await task.save();
     
-    // Create notifications for assigned users
+    // Populate task with user information
+    await task.populate('assignedTo', 'firstName lastName email profilePicture');
+    await task.populate('createdBy', 'firstName lastName');
+    
+    // Create notification for assigned users
     if (assignedTo && assignedTo.length > 0) {
       const notificationPromises = assignedTo.map(userId => {
         return new Notification({
           recipient: userId,
           sender: req.user.id,
           task: task._id,
-          project,
+          project: projectId,
           type: 'task_assigned',
-          content: `You have been assigned to the task: ${title}`,
-          actionLink: `/projects/${project}/tasks/${task._id}`
+          content: `You have been assigned to task "${title}"`,
+          actionLink: `/projects/${projectId}/tasks/${task._id}`
         }).save();
       });
       
       await Promise.all(notificationPromises);
     }
+    
+    // Actualizar el progreso del proyecto
+    await updateProjectProgress(projectId);
     
     res.status(201).json({
       success: true,
@@ -219,6 +217,11 @@ exports.updateTask = async (req, res) => {
         success: false,
         message: 'Task not found'
       });
+    }
+    
+    // Actualizar el progreso del proyecto si ha cambiado el estado
+    if (status && status !== currentTask.status) {
+      await updateProjectProgress(task.project);
     }
     
     // Create notifications for status change
@@ -571,24 +574,28 @@ exports.getTasksByUser = async (req, res) => {
   }
 };
 
-// Get my tasks
+// Get user's tasks
 exports.getMyTasks = async (req, res) => {
   try {
-    const tasks = await Task.find({ assignedTo: req.user.id })
-      .populate('project', 'name')
-      .populate('assignedTo', 'firstName lastName email profilePicture')
-      .populate('createdBy', 'firstName lastName')
-      .sort({ updatedAt: -1 });
-    
+    const tasks = await Task.find({
+      $or: [
+        { assignees: req.user._id },
+        { createdBy: req.user._id }
+      ]
+    })
+    .populate('project', 'name')
+    .populate('assignees', 'firstName lastName email')
+    .populate('createdBy', 'firstName lastName email')
+    .sort({ createdAt: -1 });
+
     res.status(200).json({
       success: true,
-      count: tasks.length,
       tasks
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Server error retrieving your tasks',
+      message: 'Error al obtener las tareas del usuario',
       error: error.message
     });
   }
@@ -642,6 +649,9 @@ exports.updateTaskStatus = async (req, res) => {
         message: 'Task not found'
       });
     }
+
+    // Actualizar el progreso del proyecto
+    await updateProjectProgress(task.project);
     
     res.status(200).json({
       success: true,
@@ -654,6 +664,61 @@ exports.updateTaskStatus = async (req, res) => {
       message: 'Server error updating task status',
       error: error.message
     });
+  }
+};
+
+// Función auxiliar para actualizar el progreso del proyecto basado en sus tareas
+const updateProjectProgress = async (projectId) => {
+  try {
+    // Obtener todas las tareas del proyecto
+    const tasks = await Task.find({ project: projectId });
+    
+    // Calcular el progreso en base a las tareas
+    const totalTasks = tasks.length;
+    let completedTasks = 0;
+    
+    tasks.forEach(task => {
+      // Mapeo de estados en español a valores de progreso
+      const statusMap = {
+        // Estados en inglés
+        'Completed': 1.0,
+        'In_Review': 0.75,
+        'In_Progress': 0.5,
+        'To_Do': 0,
+        // Estados en español
+        'Completado': 1.0,
+        'En_Revision': 0.75,
+        'En_Revisión': 0.75,
+        'En_Progreso': 0.5,
+        'Por_Hacer': 0
+      };
+      
+      // Obtener valor de progreso según el estado
+      const progressValue = statusMap[task.status] || 0;
+      completedTasks += progressValue;
+      
+      console.log(`Tarea: ${task.title}, Estado: ${task.status}, Valor: ${progressValue}`);
+    });
+    
+    const progress = totalTasks > 0 
+      ? Math.round((completedTasks / totalTasks) * 100) 
+      : 0;
+    
+    console.log(`Proyecto ${projectId}: Total tareas=${totalTasks}, Completadas=${completedTasks}, Progreso=${progress}%`);
+    
+    // Actualizar el progreso del proyecto
+    const updatedProject = await Project.findByIdAndUpdate(
+      projectId,
+      { progress },
+      { new: true }
+    );
+    
+    console.log(`Progreso actualizado del proyecto: ${updatedProject.progress}%`);
+    
+    return progress;
+  } catch (error) {
+    console.error('Error al actualizar el progreso del proyecto:', error);
+    throw error;
   }
 };
 

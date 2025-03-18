@@ -448,43 +448,70 @@ exports.getProjectKanban = async (req, res) => {
       .populate('createdBy', 'firstName lastName')
       .sort({ updatedAt: -1 });
     
-    // Group tasks by status
-    const groupedTasks = {
-      'To_Do': tasks.filter(task => task.status === 'To_Do'),
-      'In_Progress': tasks.filter(task => task.status === 'In_Progress'),
-      'In_Review': tasks.filter(task => task.status === 'In_Review'),
-      'Completed': tasks.filter(task => task.status === 'Completed')
+    // Define mapping for status normalization
+    const statusNormalizer = {
+      // Estados en inglés
+      'Completed': 'Completed',
+      'In_Review': 'In_Review',
+      'In_Progress': 'In_Progress',
+      'To_Do': 'To_Do',
+      // Estados en español
+      'Completado': 'Completed',
+      'En_Revision': 'In_Review',
+      'En_Revisión': 'In_Review',
+      'En_Progreso': 'In_Progress',
+      'Por_Hacer': 'To_Do'
     };
     
-    // Calculate project progress based on tasks
-    const totalTasks = tasks.length;
-    let completedTasks = 0;
+    // Group tasks by normalized status
+    const groupedTasks = {
+      'To_Do': tasks.filter(task => statusNormalizer[task.status] === 'To_Do' || task.status === 'To_Do'),
+      'In_Progress': tasks.filter(task => statusNormalizer[task.status] === 'In_Progress' || task.status === 'In_Progress'),
+      'In_Review': tasks.filter(task => statusNormalizer[task.status] === 'In_Review' || task.status === 'In_Review'),
+      'Completed': tasks.filter(task => statusNormalizer[task.status] === 'Completed' || task.status === 'Completed')
+    };
+    
+    // Recalcular el progreso
+    let calculatedCompletedTasks = 0;
     
     tasks.forEach(task => {
-      if (task.status === 'Completed') {
-        completedTasks++;
-      } else if (task.status === 'In_Review') {
-        completedTasks += 0.75;
-      } else if (task.status === 'In_Progress') {
-        completedTasks += 0.5;
-      }
+      // Mapeo de estados en español a valores de progreso
+      const statusMap = {
+        // Estados en inglés
+        'Completed': 1.0,
+        'In_Review': 0.75,
+        'In_Progress': 0.5,
+        'To_Do': 0,
+        // Estados en español
+        'Completado': 1.0,
+        'En_Revision': 0.75,
+        'En_Revisión': 0.75,
+        'En_Progreso': 0.5,
+        'Por_Hacer': 0
+      };
+      
+      // Obtener valor de progreso según el estado
+      const progressValue = statusMap[task.status] || 0;
+      calculatedCompletedTasks += progressValue;
     });
     
-    const progress = totalTasks > 0 
-      ? Math.round((completedTasks / totalTasks) * 100) 
+    const calculatedProgress = tasks.length > 0 
+      ? Math.round((calculatedCompletedTasks / tasks.length) * 100) 
       : 0;
+    
+    console.log(`Progreso calculado para proyecto ${req.params.projectId}: ${calculatedProgress}%`);
     
     // Update project progress
     await Project.findByIdAndUpdate(
       req.params.projectId,
-      { progress },
+      { progress: calculatedProgress },
       { new: true }
     );
     
     res.status(200).json({
       success: true,
       kanban: groupedTasks,
-      progress
+      progress: calculatedProgress
     });
   } catch (error) {
     res.status(500).json({
@@ -510,12 +537,68 @@ exports.getProjectStats = async (req, res) => {
     // Get tasks
     const tasks = await Task.find({ project: req.params.projectId });
     
-    // Calculate statistics
+    // Definir mapeo de estados para reconocer tanto inglés como español
+    const statusMappings = {
+      // Estados en inglés
+      'Completed': 'Completed',
+      'In_Review': 'In_Review',
+      'In_Progress': 'In_Progress',
+      'To_Do': 'To_Do',
+      // Estados en español
+      'Completado': 'Completed',
+      'En_Revision': 'In_Review',
+      'En_Revisión': 'In_Review',
+      'En_Progreso': 'In_Progress',
+      'Por_Hacer': 'To_Do'
+    };
+    
+    // Función para normalizar estado
+    const getNormalizedStatus = (status) => statusMappings[status] || status;
+    
+    // Calculate statistics with normalized states
     const totalTasks = tasks.length;
-    const completedTasks = tasks.filter(task => task.status === 'Completed').length;
-    const inProgressTasks = tasks.filter(task => task.status === 'In_Progress').length;
-    const inReviewTasks = tasks.filter(task => task.status === 'In_Review').length;
-    const pendingTasks = tasks.filter(task => task.status === 'To_Do').length;
+    const completedTasks = tasks.filter(task => getNormalizedStatus(task.status) === 'Completed').length;
+    const inProgressTasks = tasks.filter(task => getNormalizedStatus(task.status) === 'In_Progress').length;
+    const inReviewTasks = tasks.filter(task => getNormalizedStatus(task.status) === 'In_Review').length;
+    const pendingTasks = tasks.filter(task => getNormalizedStatus(task.status) === 'To_Do').length;
+    
+    // Recalcular el progreso
+    let calculatedCompletedTasks = 0;
+    
+    tasks.forEach(task => {
+      // Mapeo de estados en español a valores de progreso
+      const statusMap = {
+        // Estados en inglés
+        'Completed': 1.0,
+        'In_Review': 0.75,
+        'In_Progress': 0.5,
+        'To_Do': 0,
+        // Estados en español
+        'Completado': 1.0,
+        'En_Revision': 0.75,
+        'En_Revisión': 0.75,
+        'En_Progreso': 0.5,
+        'Por_Hacer': 0
+      };
+      
+      // Obtener valor de progreso según el estado
+      const progressValue = statusMap[task.status] || 0;
+      calculatedCompletedTasks += progressValue;
+    });
+    
+    const calculatedProgress = totalTasks > 0 
+      ? Math.round((calculatedCompletedTasks / totalTasks) * 100) 
+      : 0;
+    
+    // Actualizar el progreso del proyecto si es diferente
+    if (calculatedProgress !== project.progress) {
+      console.log(`Actualizando progreso de proyecto ${project._id}: ${project.progress}% -> ${calculatedProgress}%`);
+      await Project.findByIdAndUpdate(
+        req.params.projectId,
+        { progress: calculatedProgress },
+        { new: true }
+      );
+    }
     
     // Calculate tasks by priority
     const tasksByPriority = {
@@ -527,7 +610,7 @@ exports.getProjectStats = async (req, res) => {
     
     // Calculate overdue tasks
     const overdueTasks = tasks.filter(task => {
-      return task.status !== 'Completed' && new Date(task.dueDate) < new Date();
+      return getNormalizedStatus(task.status) !== 'Completed' && new Date(task.dueDate) < new Date();
     }).length;
     
     // Calculate days left in project
@@ -536,9 +619,7 @@ exports.getProjectStats = async (req, res) => {
     const daysLeft = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
     
     // Calculate if project is on track
-    const actualProgress = totalTasks > 0 
-      ? (completedTasks / totalTasks) * 100 
-      : 0;
+    const actualProgress = calculatedProgress;
     
     const expectedProgress = project.startDate && project.endDate 
       ? calculateExpectedProgress(project.startDate, project.endDate) 
@@ -557,7 +638,7 @@ exports.getProjectStats = async (req, res) => {
         tasksByPriority,
         overdueTasks,
         daysLeft,
-        progress: project.progress,
+        progreso: calculatedProgress,
         actualProgress,
         expectedProgress,
         onTrack

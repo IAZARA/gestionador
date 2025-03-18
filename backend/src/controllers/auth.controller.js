@@ -176,7 +176,7 @@ exports.getProfile = async (req, res) => {
 // Update user profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { firstName, lastName, email, notificationPreferences } = req.body;
+    const { firstName, lastName, email, notificationPreferences, profilePicture } = req.body;
     
     // Build update object
     const updateFields = {};
@@ -184,6 +184,7 @@ exports.updateProfile = async (req, res) => {
     if (lastName) updateFields.lastName = lastName;
     if (email) updateFields.email = email;
     if (notificationPreferences) updateFields.notificationPreferences = notificationPreferences;
+    if (profilePicture) updateFields.profilePicture = profilePicture;
     
     // Update user
     const user = await User.findByIdAndUpdate(
@@ -202,7 +203,24 @@ exports.updateProfile = async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Profile updated successfully',
-      user
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        expertiseArea: user.expertiseArea,
+        profilePicture: user.profilePicture,
+        department: user.department,
+        position: user.position,
+        primaryPhone: user.primaryPhone,
+        alternatePhone: user.alternatePhone,
+        address: user.address,
+        dateOfBirth: user.dateOfBirth,
+        idNumber: user.idNumber,
+        workAddress: user.workAddress,
+        isActive: user.isActive
+      }
     });
   } catch (error) {
     res.status(500).json({

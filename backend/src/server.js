@@ -40,7 +40,9 @@ connectDB();
 
 // Middleware
 app.use(cors());
-app.use(helmet()); // Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+})); // Security headers
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use(morgan('dev')); // HTTP request logger
@@ -52,16 +54,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rate limiting
+// Servir archivos estáticos antes de cualquier otro middleware
+app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', express.static(path.join(__dirname, '..', config.fileStorage)));
+
+// Rate limiting - Solo para rutas API excepto archivos estáticos
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.'
 });
-app.use('/api/', limiter);
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '..', config.fileStorage)));
+// Aplicar rate limiting solo a las rutas /api
+app.use('/api', limiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
