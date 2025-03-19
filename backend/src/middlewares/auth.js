@@ -81,8 +81,7 @@ exports.isAdminOrManager = (req, res, next) => {
 
 // Middleware to check if user is admin or has administrative expertise
 exports.hasAdministrativeAccess = (req, res, next) => {
-  if (req.user && (req.user.role === 'admin' || 
-      (req.user.expertiseArea === 'administrative' && req.user.role === 'manager'))) {
+  if (req.user && (req.user.role === 'admin' || req.user.expertiseArea === 'administrative')) {
     next();
   } else {
     res.status(403).json({

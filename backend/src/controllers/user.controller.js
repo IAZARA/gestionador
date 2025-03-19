@@ -7,8 +7,14 @@ exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password');
     
-    // Devolver directamente el array de usuarios
-    res.status(200).json(users);
+    res.status(200).json({
+      success: true,
+      users,
+      count: users.length,
+      total: users.length,
+      pages: 1,
+      currentPage: 1
+    });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -431,6 +437,69 @@ exports.getUserWorkload = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error retrieving user workload',
+      error: error.message
+    });
+  }
+};
+
+// Get user statistics
+exports.getUserStats = async (req, res) => {
+  try {
+    // Count users by role
+    const usersByRole = await User.aggregate([
+      { $group: { _id: '$role', count: { $sum: 1 } } }
+    ]);
+    
+    // Count users by expertise
+    const usersByExpertise = await User.aggregate([
+      { $group: { _id: '$expertiseArea', count: { $sum: 1 } } }
+    ]);
+    
+    // Get active vs inactive users
+    const activeUsers = await User.countDocuments({ isActive: true });
+    const inactiveUsers = await User.countDocuments({ isActive: false });
+    
+    res.status(200).json({
+      success: true,
+      stats: {
+        total: await User.countDocuments(),
+        active: activeUsers,
+        inactive: inactiveUsers,
+        byRole: usersByRole,
+        byExpertise: usersByExpertise
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error retrieving user statistics',
+      error: error.message
+    });
+  }
+};
+
+// Export users
+exports.exportUsers = async (req, res) => {
+  try {
+    const users = await User.find()
+      .select('-password -passwordResetToken -passwordResetExpires')
+      .sort({ lastName: 1, firstName: 1 });
+    
+    res.status(200).json({
+      success: true,
+      users: users.map(user => ({
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: user.role,
+        expertiseArea: user.expertiseArea,
+        isActive: user.isActive
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error exporting users',
       error: error.message
     });
   }
