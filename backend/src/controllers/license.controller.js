@@ -132,7 +132,7 @@ exports.deleteLicense = async (req, res) => {
       return res.status(404).json({ message: 'Licencia no encontrada' });
     }
     
-    await License.findByIdAndRemove(req.params.id);
+    await License.findByIdAndDelete(req.params.id);
     
     // Notify via Socket.IO if available
     if (req.io) {

@@ -58,15 +58,28 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(path.join(__dirname, '..', config.fileStorage)));
 
-// Rate limiting - Solo para rutas API excepto archivos estáticos
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+// Rate limiting - Configuración general para rutas API
+const defaultLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 100, // 100 solicitudes por minuto
+  message: 'Demasiadas solicitudes. Por favor, espere un momento.'
 });
 
-// Aplicar rate limiting solo a las rutas /api
-app.use('/api', limiter);
+// Rate limiting específico para rutas que requieren más solicitudes
+const highTrafficLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 300, // 300 solicitudes por minuto
+  message: 'Demasiadas solicitudes. Por favor, espere un momento.'
+});
+
+// Aplicar rate limiting específico para rutas de alta frecuencia
+app.use('/api/projects/:projectId/stats', highTrafficLimiter);
+app.use('/api/projects/:projectId/activity', highTrafficLimiter);
+app.use('/api/projects/:projectId/tasks', highTrafficLimiter);
+app.use('/api/notifications', highTrafficLimiter);
+
+// Aplicar rate limiting general para el resto de rutas API
+app.use('/api', defaultLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
