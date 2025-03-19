@@ -1,4 +1,4 @@
-const License = require('../../models/License');
+const License = require('../models/License');
 const User = require('../models/User');
 const { logger } = require('../utils/logger');
 

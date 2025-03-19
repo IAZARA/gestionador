@@ -13,7 +13,11 @@ const WikiPageSchema = new mongoose.Schema({
   project: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project',
-    required: true
+    required: false
+  },
+  isGlobal: {
+    type: Boolean,
+    default: false
   },
   author: {
     type: mongoose.Schema.Types.ObjectId,
@@ -75,7 +79,8 @@ const WikiPageSchema = new mongoose.Schema({
 });
 
 // Index for faster searches by project and path
-WikiPageSchema.index({ project: 1, path: 1 }, { unique: true });
+WikiPageSchema.index({ project: 1, path: 1 }, { unique: true, sparse: true });
+WikiPageSchema.index({ isGlobal: 1, path: 1 }, { unique: true, sparse: true });
 
 // Method to add new version to history
 WikiPageSchema.methods.addVersion = function(content, userId, comment = '') {

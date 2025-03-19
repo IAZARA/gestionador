@@ -470,3 +470,183 @@ exports.revertToVersion = async (req, res) => {
     });
   }
 };
+
+// Get all global wiki pages
+exports.getGlobalWikiPages = async (req, res) => {
+  try {
+    const wikiPages = await WikiPage.find({ isGlobal: true })
+      .populate('author', 'firstName lastName')
+      .populate('lastEditedBy', 'firstName lastName')
+      .sort({ path: 1 });
+    
+    // Organize pages into hierarchical structure
+    const pageMap = {};
+    const rootPages = [];
+    
+    // First pass: map all pages by path
+    wikiPages.forEach(page => {
+      pageMap[page.path] = {
+        ...page.toObject(),
+        children: []
+      };
+    });
+    
+    // Second pass: build the tree
+    Object.values(pageMap).forEach(page => {
+      if (page.parent) {
+        const parentPath = pageMap[page.parent.path];
+        if (parentPath) {
+          parentPath.children.push(page);
+        } else {
+          rootPages.push(page);
+        }
+      } else {
+        rootPages.push(page);
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      count: wikiPages.length,
+      wikiPages: rootPages
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al recuperar las páginas de la wiki global',
+      error: error.message
+    });
+  }
+};
+
+// Create a new global wiki page
+exports.createGlobalWikiPage = async (req, res) => {
+  try {
+    const { title, content, parent } = req.body;
+    
+    // Generate path from title
+    const path = `/${title.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    // Check if path already exists in global wiki
+    const pathExists = await WikiPage.findOne({ isGlobal: true, path });
+    if (pathExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe una página con esta ruta en la wiki global'
+      });
+    }
+    
+    // Create new wiki page
+    const wikiPage = new WikiPage({
+      title,
+      content: content || ' ',  // Usar espacio en blanco para satisfacer validación
+      isGlobal: true,
+      author: req.user.id,
+      lastEditedBy: req.user.id,
+      parent,
+      path
+    });
+    
+    await wikiPage.save();
+    
+    res.status(201).json({
+      success: true,
+      message: 'Página de wiki global creada exitosamente',
+      wikiPage
+    });
+  } catch (error) {
+    console.error('Error al crear página de wiki global:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al crear la página de wiki global',
+      error: error.message
+    });
+  }
+};
+
+// Update global wiki page
+exports.updateGlobalWikiPage = async (req, res) => {
+  try {
+    const { title, content, isPublished, parent, versionComment } = req.body;
+    
+    // Find wiki page and ensure it's global
+    const wikiPage = await WikiPage.findOne({ 
+      _id: req.params.wikiId,
+      isGlobal: true
+    });
+    
+    if (!wikiPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'Página de wiki global no encontrada'
+      });
+    }
+    
+    // Add current version to history
+    wikiPage.addVersion(content, req.user.id, versionComment || 'Contenido actualizado');
+    
+    // Update fields
+    if (title) wikiPage.title = title;
+    if (isPublished !== undefined) wikiPage.isPublished = isPublished;
+    if (parent) wikiPage.parent = parent;
+    
+    await wikiPage.save();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Página de wiki global actualizada exitosamente',
+      wikiPage
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar la página de wiki global',
+      error: error.message
+    });
+  }
+};
+
+// Delete global wiki page
+exports.deleteGlobalWikiPage = async (req, res) => {
+  try {
+    // Find wiki page and ensure it's global
+    const wikiPage = await WikiPage.findOne({
+      _id: req.params.wikiId,
+      isGlobal: true
+    });
+    
+    if (!wikiPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'Página de wiki global no encontrada'
+      });
+    }
+    
+    // Check if page has children
+    const hasChildren = await WikiPage.findOne({ 
+      parent: wikiPage._id,
+      isGlobal: true
+    });
+    
+    if (hasChildren) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se puede eliminar una página que tiene subpáginas. Elimine primero las subpáginas.'
+      });
+    }
+    
+    // Delete the wiki page
+    await WikiPage.findByIdAndDelete(req.params.wikiId);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Página de wiki global eliminada exitosamente'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar la página de wiki global',
+      error: error.message
+    });
+  }
+};

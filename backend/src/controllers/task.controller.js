@@ -722,8 +722,13 @@ const updateProjectProgress = async (projectId) => {
     // Obtener todas las tareas del proyecto
     const allTasks = await Task.find({ project: projectId });
     
-    // Filtrar las tareas eliminadas
-    const tasks = allTasks.filter(task => task.status !== 'Deleted');
+    // Filtrar las tareas eliminadas (considerando todas las variantes posibles del estado)
+    const tasks = allTasks.filter(task => {
+      const status = task.status?.toLowerCase();
+      return status !== 'deleted' && 
+             status !== 'eliminado' && 
+             status !== 'deleted';
+    });
     
     // Calcular el progreso en base a las tareas
     const totalTasks = tasks.length;
