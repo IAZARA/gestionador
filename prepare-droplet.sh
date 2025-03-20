@@ -10,9 +10,9 @@ echo "Actualizando el sistema..."
 sudo apt update
 sudo apt upgrade -y
 
-# Instalar Node.js y npm (versión 16)
-echo "Instalando Node.js y npm..."
-curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+# Instalar Node.js y npm (versión 18 en lugar de 16)
+echo "Instalando Node.js 18 y npm..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # Verificar instalación de Node.js
@@ -50,6 +50,10 @@ if [ -d "/root/backups" ]; then
 else
   echo "No se encontró el directorio de respaldos."
 fi
+
+# Instalar los clientes de MongoDB para comandos como mongo
+echo "Instalando clientes de MongoDB..."
+sudo apt install -y mongodb-clients
 
 # Instalar Nginx
 echo "Instalando Nginx..."

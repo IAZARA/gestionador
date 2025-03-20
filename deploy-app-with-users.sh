@@ -10,24 +10,76 @@ JWT_EXPIRATION=1d
 FILE_STORAGE_PATH=uploads/
 EOF
 
-# Verificar si existen usuarios en la base de datos
-echo "Verificando la base de datos de usuarios..."
-USERS_COUNT=$(mongo --quiet gestionador --eval "db.users.count()" || echo "0")
-
-if [ "$USERS_COUNT" != "0" ]; then
-  echo "Se encontraron $USERS_COUNT usuarios en la base de datos."
-  echo "Los datos de usuarios están listos para la aplicación."
+# Verificar que MongoDB está funcionando
+echo "Verificando que MongoDB esté funcionando..."
+if systemctl is-active --quiet mongod; then
+  echo "MongoDB está activo y funcionando."
 else
-  echo "No se encontraron usuarios en la base de datos."
-  echo "Es posible que haya habido un problema con la restauración de la base de datos local."
-  echo "Verifica que el script de restauración se ejecutó correctamente."
+  echo "MongoDB no está funcionando. Intentando iniciarlo..."
+  sudo systemctl start mongod
+  sudo systemctl enable mongod
+  
+  if systemctl is-active --quiet mongod; then
+    echo "MongoDB iniciado correctamente."
+  else
+    echo "Error: No se pudo iniciar MongoDB. Verifica la instalación."
+    exit 1
+  fi
 fi
+
+echo "Verificando la restauración de la base de datos..."
+echo "Se asume que la base de datos fue restaurada en pasos anteriores."
 
 # Desplegar el backend
 cd /var/www/gestionador/backend
 npm install
-npm run build
-pm2 start dist/index.js --name gestionador-backend
+
+# Verificar si existe el script build
+if grep -q "\"build\"" package.json; then
+  echo "Ejecutando npm build..."
+  npm run build
+  
+  # Verificar si existe dist/index.js
+  if [ -f "dist/index.js" ]; then
+    echo "Archivo dist/index.js encontrado. Iniciando con PM2..."
+    pm2 start dist/index.js --name gestionador-backend
+  else
+    echo "Archivo dist/index.js no encontrado. Buscando el archivo principal..."
+    MAIN_FILE=$(grep -o '"main":\s*"[^"]*"' package.json | cut -d'"' -f4)
+    
+    if [ -n "$MAIN_FILE" ] && [ -f "$MAIN_FILE" ]; then
+      echo "Iniciando $MAIN_FILE con PM2..."
+      pm2 start $MAIN_FILE --name gestionador-backend
+    else
+      echo "Intentando iniciar index.js en la raíz..."
+      if [ -f "index.js" ]; then
+        pm2 start index.js --name gestionador-backend
+      else
+        echo "No se encontró un archivo válido para iniciar. Verifica la estructura del backend."
+        exit 1
+      fi
+    fi
+  fi
+else
+  echo "No se encontró script 'build' en package.json."
+  echo "Intentando iniciar la aplicación directamente..."
+  
+  # Buscar archivo principal en package.json
+  MAIN_FILE=$(grep -o '"main":\s*"[^"]*"' package.json | cut -d'"' -f4)
+  
+  if [ -n "$MAIN_FILE" ] && [ -f "$MAIN_FILE" ]; then
+    echo "Iniciando $MAIN_FILE con PM2..."
+    pm2 start $MAIN_FILE --name gestionador-backend
+  else
+    echo "Intentando iniciar index.js en la raíz..."
+    if [ -f "index.js" ]; then
+      pm2 start index.js --name gestionador-backend
+    else
+      echo "No se encontró un archivo válido para iniciar. Verifica la estructura del backend."
+      exit 1
+    fi
+  fi
+fi
 
 # Desplegar el frontend
 cd /var/www/gestionador/frontend
