@@ -23,10 +23,22 @@ const ProjectSchema = new mongoose.Schema({
     enum: ['Pending', 'In_Progress', 'Completed'],
     default: 'Pending'
   },
-  priority: {
+  priorityLevel: {
     type: String,
     enum: ['Low', 'Medium', 'High', 'Urgent'],
     default: 'Medium'
+  },
+  priority: {
+    type: Number,
+    min: 1,
+    max: 10,
+    default: 1
+  },
+  effort: {
+    type: Number,
+    min: 1,
+    max: 10,
+    default: 1
   },
   owner: {
     type: mongoose.Schema.Types.ObjectId,

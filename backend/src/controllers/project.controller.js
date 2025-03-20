@@ -12,7 +12,38 @@ const AuditLog = require('../models/AuditLog');
 // Create a new project
 exports.createProject = async (req, res) => {
   try {
-    const { name, description, startDate, endDate, priority, tags } = req.body;
+    console.log('Datos recibidos para crear proyecto:', req.body);
+    
+    const { name, description, startDate, endDate, priorityLevel, priority, effort, tags, members } = req.body;
+    
+    // Validar y ajustar valores numéricos
+    const validatedEffort = effort ? Math.max(1, Math.min(10, parseInt(effort) || 1)) : 1;
+    const validatedPriority = priority ? Math.max(1, Math.min(10, parseInt(priority) || 1)) : 1;
+    
+    // Procesar los miembros del proyecto
+    let projectMembers = [];
+    
+    // Primero, incluir al creador como miembro con rol de gestor
+    projectMembers.push({ 
+      user: req.user.id, 
+      role: 'manager',
+      addedAt: new Date()
+    });
+    
+    // Luego, añadir los miembros enviados desde el frontend si existen
+    if (members && Array.isArray(members) && members.length > 0) {
+      // Filtrar para no duplicar al creador
+      const additionalMembers = members
+        .filter(member => member.user && member.user !== req.user.id)
+        .map(member => ({
+          user: member.user,
+          role: member.role || 'user',
+          addedAt: new Date()
+        }));
+      
+      projectMembers = [...projectMembers, ...additionalMembers];
+      console.log('Miembros finales del proyecto:', projectMembers);
+    }
     
     // Create new project
     const project = new Project({
@@ -20,13 +51,31 @@ exports.createProject = async (req, res) => {
       description,
       startDate,
       endDate,
-      priority,
+      priorityLevel: priorityLevel || 'Medium',
+      priority: validatedPriority,
+      effort: validatedEffort,
       tags,
       owner: req.user.id,
-      members: [{ user: req.user.id, role: 'manager' }] // Add owner as a manager member
+      members: projectMembers
     });
     
     await project.save();
+    
+    // Registrar en el log de auditoría
+    try {
+      await AuditLog.create({
+        action: 'create',
+        entityType: 'project',
+        entityId: project._id,
+        userId: req.user.id,
+        details: {
+          projectName: name,
+          membersCount: projectMembers.length
+        }
+      });
+    } catch (auditError) {
+      console.error('Error al registrar la auditoría:', auditError);
+    }
     
     res.status(201).json({
       success: true,
@@ -34,6 +83,7 @@ exports.createProject = async (req, res) => {
       project
     });
   } catch (error) {
+    console.error('Error en createProject:', error);
     res.status(500).json({
       success: false,
       message: 'Server error creating project',
@@ -117,7 +167,7 @@ exports.getProjectById = async (req, res) => {
 // Update project
 exports.updateProject = async (req, res) => {
   try {
-    const { name, description, startDate, endDate, status, priority, tags } = req.body;
+    const { name, description, startDate, endDate, status, priorityLevel, priority, effort, tags } = req.body;
     
     // Build update object
     const updateFields = {};
@@ -126,7 +176,19 @@ exports.updateProject = async (req, res) => {
     if (startDate) updateFields.startDate = startDate;
     if (endDate) updateFields.endDate = endDate;
     if (status) updateFields.status = status;
-    if (priority) updateFields.priority = priority;
+    if (priorityLevel) updateFields.priorityLevel = priorityLevel;
+    
+    // Campos numéricos de esfuerzo y prioridad
+    if (effort !== undefined) {
+      // Asegurarse de que el valor esté en el rango correcto (1-10)
+      updateFields.effort = Math.max(1, Math.min(10, parseInt(effort) || 1));
+    }
+    
+    if (priority !== undefined) {
+      // Asegurarse de que el valor esté en el rango correcto (1-10)
+      updateFields.priority = Math.max(1, Math.min(10, parseInt(priority) || 1));
+    }
+    
     if (tags) updateFields.tags = tags;
     
     // Update the updatedAt field
