@@ -16,8 +16,8 @@ const documentAudit = auditLogger({ entityType: 'document', entityIdParam: 'docu
 // Create a new project
 router.post('/', authenticate, isAdminOrManager, projectAudit, projectController.createProject);
 
-// Get all projects (admin only)
-router.get('/all', authenticate, isAdmin, projectController.getAllProjects);
+// Get all projects (accesible por todos los usuarios autenticados)
+router.get('/all', authenticate, projectController.getAllProjects);
 
 // Get projects for current user
 router.get('/', authenticate, projectController.getUserProjects);

@@ -92,17 +92,18 @@ exports.createProject = async (req, res) => {
   }
 };
 
-// Get all projects (admin only)
+// Get all projects
 exports.getAllProjects = async (req, res) => {
   try {
     console.log('⭐ getAllProjects - Obteniendo todos los proyectos');
     
+    // Buscar todos los proyectos sin filtrar por usuario
     const projects = await Project.find()
       .populate('owner', 'firstName lastName email role profilePicture')
       .populate('members.user', 'firstName lastName email role profilePicture')
       .sort({ updatedAt: -1 });
     
-    console.log(`✅ Retornando ${projects.length} proyectos (admin view)`);
+    console.log(`✅ Retornando ${projects.length} proyectos (all projects view)`);
     
     res.status(200).json({
       success: true,
