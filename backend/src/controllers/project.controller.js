@@ -92,36 +92,17 @@ exports.createProject = async (req, res) => {
   }
 };
 
-// Get all projects based on user role
+// Get all projects (admin only)
 exports.getAllProjects = async (req, res) => {
   try {
-    let projects;
+    console.log('⭐ getAllProjects - Obteniendo todos los proyectos');
     
-    // If admin, get all projects
-    if (req.user.role === 'admin') {
-      projects = await Project.find()
-        .populate('owner', 'firstName lastName email')
-        .sort({ updatedAt: -1 });
-    } else {
-      // Get projects owned by user or where user is a member
-      const ownedProjects = await Project.find({ owner: req.user.id })
-        .populate('owner', 'firstName lastName email')
-        .sort({ updatedAt: -1 });
-        
-      const memberProjects = await Project.find({ 
-        'members.user': req.user.id 
-      })
-      .populate('owner', 'firstName lastName email')
+    const projects = await Project.find()
+      .populate('owner', 'firstName lastName email role profilePicture')
+      .populate('members.user', 'firstName lastName email role profilePicture')
       .sort({ updatedAt: -1 });
-      
-      // Combine projects and remove duplicates
-      const projectMap = new Map();
-      [...ownedProjects, ...memberProjects].forEach(project => {
-        projectMap.set(project._id.toString(), project);
-      });
-      
-      projects = Array.from(projectMap.values());
-    }
+    
+    console.log(`✅ Retornando ${projects.length} proyectos (admin view)`);
     
     res.status(200).json({
       success: true,
@@ -129,9 +110,10 @@ exports.getAllProjects = async (req, res) => {
       projects
     });
   } catch (error) {
+    console.error('❌ Error al obtener todos los proyectos:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error retrieving projects',
+      message: 'Error al obtener proyectos',
       error: error.message
     });
   }
@@ -325,7 +307,7 @@ exports.addProjectMember = async (req, res) => {
       sender: req.user.id,
       project: project._id,
       type: 'project_assignment',
-      content: `You have been added to the project: ${project.name}`,
+      content: `Has sido añadido al proyecto: ${project.name}`,
       actionLink: `/projects/${project._id}`
     });
     
@@ -716,135 +698,81 @@ exports.getProjectStats = async (req, res) => {
   }
 };
 
-// Get projects for current user
+// Get projects for the current user
 exports.getUserProjects = async (req, res) => {
   try {
-    console.log('🔍 Obteniendo proyectos para el usuario:', req.user.id);
-    console.log('🔍 Parámetros de consulta recibidos:', req.query);
+    console.log('⭐ getUserProjects - Obteniendo proyectos para usuario:', req.user.id);
     
-    // Verificar si se debe incluir detalles de miembros - asegurar que el string 'true' se convierta a booleano correctamente
-    const includeMembers = req.query.includeMembers === 'true';
-    console.log('📋 ¿Incluir detalles completos de miembros?', includeMembers, 'Valor original:', req.query.includeMembers);
+    // Verificar si el usuario es administrador, para mostrar todos los proyectos
+    const isAdmin = req.user.role === 'admin';
+    console.log('Es administrador:', isAdmin);
     
-    // Obtener todos los usuarios para tener sus datos completos disponibles
-    let allUsers = [];
-    let userMap = {};
+    // Si el usuario es admin, devolver todos los proyectos
+    let projects = [];
     
-    if (includeMembers) {
-      try {
-        console.log('🔍 Cargando datos de todos los usuarios...');
-        // Asegurarse de obtener todos los campos relevantes para mostrar usuarios
-        allUsers = await User.find({}, 'firstName lastName email profilePicture role expertiseArea');
-        console.log(`✅ Se encontraron ${allUsers.length} usuarios en el sistema`);
+    if (isAdmin) {
+      // Get all projects for admin
+      console.log('Obteniendo todos los proyectos (admin)');
+      projects = await Project.find()
+        .populate('owner', 'firstName lastName email')
+        .populate('members.user', 'firstName lastName email role profilePicture')
+        .sort({ updatedAt: -1 });
+    } else {
+      // Get projects owned by user or where user is a member
+      const ownedProjects = await Project.find({ owner: req.user.id })
+        .populate('owner', 'firstName lastName email')
+        .populate('members.user', 'firstName lastName email role profilePicture')
+        .sort({ updatedAt: -1 });
         
-        if (allUsers.length === 0) {
-          console.warn('⚠️ No se encontraron usuarios en la base de datos');
-        }
-        
-        // Crear un mapa de ID de usuario a objeto de usuario para búsqueda rápida
-        allUsers.forEach(user => {
-          if (user && user._id) {
-            userMap[user._id.toString()] = user.toObject();
-            console.log(`👤 Usuario mapeado: ${user.firstName} ${user.lastName} (${user._id})`);
-          }
-        });
-      } catch (userError) {
-        console.error('❌ Error al obtener los usuarios:', userError);
-      }
+      const memberProjects = await Project.find({ 
+        'members.user': req.user.id 
+      })
+      .populate('owner', 'firstName lastName email')
+      .populate('members.user', 'firstName lastName email role profilePicture')
+      .sort({ updatedAt: -1 });
+      
+      // Combine projects and remove duplicates
+      const projectMap = new Map();
+      [...ownedProjects, ...memberProjects].forEach(project => {
+        projectMap.set(project._id.toString(), project);
+      });
+      
+      projects = Array.from(projectMap.values());
     }
     
-    // Obtener proyectos donde el usuario es propietario o miembro
-    console.log('🔍 Buscando proyectos donde el usuario es propietario o miembro...');
-    let query = Project.find({
-      $or: [
-        { owner: req.user.id },
-        { 'members.user': req.user.id }
-      ]
+    // Procesar los proyectos para asegurar que los miembros estén correctamente populados
+    const processedProjects = projects.map(project => {
+      const projectObj = project.toObject();
+      
+      // Asegurar que todos los miembros tengan información completa
+      if (projectObj.members && Array.isArray(projectObj.members)) {
+        projectObj.members = projectObj.members.map(member => {
+          // Si el miembro ya está populado correctamente, devolverlo tal cual
+          if (member.user && typeof member.user === 'object' && 
+              (member.user.firstName || member.user.lastName)) {
+            return member;
+          }
+          
+          // Si no está populado correctamente, buscar información adicional
+          return member;
+        });
+      }
+      
+      return projectObj;
     });
     
-    // Populación básica del propietario
-    query = query.populate('owner', 'firstName lastName email profilePicture');
+    console.log(`✅ Retornando ${processedProjects.length} proyectos`);
     
-    // Si se solicita incluir detalles de miembros, añadir el populate correspondiente
-    if (includeMembers) {
-      console.log('🔄 Populando miembros del proyecto...');
-      query = query.populate({
-        path: 'members.user',
-        select: 'firstName lastName email profilePicture role expertiseArea'
-      });
-    }
-    
-    let projects = await query.sort({ updatedAt: -1 });
-    console.log(`✅ Se encontraron ${projects.length} proyectos para el usuario`);
-    
-    // Procesamiento adicional para garantizar datos completos
-    if (includeMembers) {
-      console.log('🔄 Procesando datos de miembros en proyectos...');
-      
-      // Procesar cada proyecto para asegurar datos completos
-      projects = projects.map(project => {
-        // Convertir a objeto plano para poder modificarlo
-        const plainProject = project.toObject();
-        
-        // Añadir mapas de usuarios para referencia
-        plainProject._populated_users = userMap;
-        plainProject._all_members = allUsers;
-        
-        console.log(`🔍 Procesando proyecto: ${plainProject.name} (${plainProject._id})`);
-        console.log(`👥 Miembros encontrados: ${plainProject.members ? plainProject.members.length : 0}`);
-        
-        // Procesar los miembros para asegurar que tienen datos completos
-        if (plainProject.members && Array.isArray(plainProject.members)) {
-          plainProject.members = plainProject.members.map(member => {
-            // Si el miembro ya tiene datos de usuario populados, asegurar que estén completos
-            if (member.user && typeof member.user === 'object') {
-              console.log(`✅ Miembro ya populado: ${member.user.firstName || ''} ${member.user.lastName || ''}`);
-              return member;
-            }
-            
-            // Si es solo un ID, buscar en el mapa de usuarios
-            if (member.user && typeof member.user === 'string') {
-              const userId = member.user;
-              console.log(`🔍 Buscando datos para usuario con ID: ${userId}`);
-              
-              if (userMap[userId]) {
-                const userData = userMap[userId];
-                console.log(`✅ Datos encontrados para: ${userData.firstName} ${userData.lastName}`);
-                
-                // Reemplazar el ID por el objeto completo
-                member.user = {
-                  _id: userId,
-                  firstName: userData.firstName,
-                  lastName: userData.lastName,
-                  email: userData.email,
-                  profilePicture: userData.profilePicture,
-                  role: userData.role,
-                  expertiseArea: userData.expertiseArea
-                };
-              } else {
-                console.log(`⚠️ No se encontraron datos para el usuario: ${userId}`);
-              }
-            }
-            
-            return member;
-          });
-        }
-        
-        return plainProject;
-      });
-    }
-    
-    console.log('✅ Envío de proyectos completado');
     res.status(200).json({
       success: true,
-      count: projects.length,
-      projects
+      count: processedProjects.length,
+      projects: processedProjects
     });
   } catch (error) {
     console.error('❌ Error al obtener proyectos del usuario:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error retrieving user projects',
+      message: 'Error al obtener proyectos',
       error: error.message
     });
   }
